@@ -11,7 +11,7 @@ class DebugCallback(BaseCallback):
         self.episode_rewards = []
         self.episode_lengths = []
 
-        self.fig, self.ax = plt.subplots()
+        self.figure, self.ax = plt.subplots()
         self.light_source_point, = self.ax.plot([], [], 'yo', label='Light Source')
         self.servo_point, = self.ax.plot([], [], 'ro', label='Servo Position')
 

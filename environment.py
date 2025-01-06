@@ -128,9 +128,27 @@ class LightTrackingEnv(gym.Env):
         return ldr_values, reward, done, False, {}
 
     def _calculate_ldr_values(self):
-        distances = np.linalg.norm(self.light_source - self.ldr_positions, axis=1)  # Vektorisierte Berechnung
-        intensities = np.clip(1 / (distances**2 + 1), 0, 1)
-        return intensities / intensities.max() if len(intensities) > 1 and intensities.max() > 0 else intensities
+        distances = np.linalg.norm(self.light_source - self.ldr_positions, axis=1)
+        light_radius = 10
+        sensor_radius = 5
+
+        # Lichtintensitätsberechnung
+        light_intensity = np.where(
+            distances <= light_radius,
+            1,
+            1 / (1 + (distances - light_radius) ** 2)
+        )
+
+        # Sensorverstärkung
+        sensor_effect = np.where(
+            distances <= sensor_radius,
+            1.2,
+            1
+        )
+
+        # Finaler Messwert = Lichtintensität * Sensorverstärkung
+        final_values = light_intensity * sensor_effect
+        return final_values / final_values.max() if final_values.max() > 0 else final_values
 
     def _move_light_source(self, move_range=0.01, stationary=True):
         if not stationary:
@@ -149,3 +167,16 @@ class LightTrackingEnv(gym.Env):
             light_source_positions=np.array(self.light_source_log),  # Lichtquellenpositionen hinzufügen
         )
         print(f"Logs wurden unter '{filename}' gespeichert.")
+
+    def _calculate_sensor_values(self):
+        sensor_radius = 5  # Beispiel: Sensor hat einen Radius von 5 Einheiten
+        distances = np.linalg.norm(self.light_source - self.ldr_positions, axis=1)  # Distanz zu LDRs
+
+        # Innerhalb des Sensor-Radius messen wir intensiver (Bonus)
+        sensor_effect = np.where(
+            distances <= sensor_radius,
+            1.2,  # Verstärkte Messung innerhalb des Radius
+            1  # Normale Messung außerhalb des Radius
+        )
+
+        return sensor_effect
