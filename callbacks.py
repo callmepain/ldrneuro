@@ -2,6 +2,8 @@ from stable_baselines3.common.callbacks import BaseCallback
 import numpy as np
 from utils import calculate_reward
 import torch
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
 
 class DebugCallback(BaseCallback):
     def __init__(self):
@@ -9,9 +11,26 @@ class DebugCallback(BaseCallback):
         self.episode_rewards = []
         self.episode_lengths = []
 
+        self.fig, self.ax = plt.subplots()
+        self.light_source_point, = self.ax.plot([], [], 'yo', label='Light Source')
+        self.servo_point, = self.ax.plot([], [], 'ro', label='Servo Position')
+
+        # Setup plot
+        self.ax.set_xlim(0, 180)
+        self.ax.set_ylim(0, 180)
+        self.ax.legend()
+        self.ax.set_title("Training Visualization")
+        self.ax.set_xlabel("X Position")
+        self.ax.set_ylabel("Y Position")
+
     def _on_step(self) -> bool:
         # Zugriff auf die ursprüngliche Umgebung
         env = self.training_env.envs[0].unwrapped
+
+        # Update positions
+        self.light_source_point.set_data([env.light_source[0] * 180], [env.light_source[1] * 180])
+        self.servo_point.set_data([env.servo_position[0]], [env.servo_position[1]])
+        plt.pause(0.01)  # Update the plot
 
         # LDR-Werte berechnen
         ldr_values = env._calculate_ldr_values()
