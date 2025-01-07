@@ -7,6 +7,13 @@ from utils import calculate_reward
 class LightTrackingEnv(gym.Env):
     def __init__(self):
         super(LightTrackingEnv, self).__init__()
+        self.light_intensity = 10.0  # Beispielwert
+        self.sensor_sensitivity = 5.0  # Empfindlichkeit des LDR
+
+        # Standard-Radien
+        self.light_radius = self.light_intensity * 5.0  # Beispiel: Lichtintensität beeinflusst den Radius
+        self.sensor_radius = self.sensor_sensitivity * 4.0  # Beispiel: Empfindlichkeit beeinflusst den Radius
+
         self.action_space = spaces.Discrete(5)  # 5 Aktionen: Links, Rechts, Hoch, Runter, Stopp
         self.observation_space = spaces.Box(low=0, high=1, shape=(4,), dtype=np.float32)  # LDR-Werte
         self.servo_position = [90, 90]  # Anfangswinkel horizontal, vertikal
@@ -33,13 +40,6 @@ class LightTrackingEnv(gym.Env):
         """
         self.np_random, _ = gym.utils.seeding.np_random(seed)
         random.seed(seed)
-
-    def reset_alt(self, seed=None, options=None):
-        self.servo_position = [random.randint(45, 135), random.randint(45, 135)]  # Zufällige Startposition
-        self.light_source = np.random.uniform(0.3, 0.7, size=2)  # Lichtquelle zufällig innerhalb eines Bereichs
-        self.previous_action = random.choice([0, 1, 2, 3])  # Zufällige Startaktion
-        self.current_action = self.previous_action
-        return self._calculate_ldr_values(), {}
     
     def reset(self, seed=None, options=None):
         self.servo_position = [random.randint(30, 150), random.randint(30, 150)]
@@ -55,38 +55,7 @@ class LightTrackingEnv(gym.Env):
     def _is_out_of_bounds(self):
         servo_position_array = np.array(self.servo_position)  # Konvertiere in NumPy-Array
         return not np.all((0 <= servo_position_array) & (servo_position_array <= 180))
-
-    def step_alt(self, action):
-        # Speichere die aktuelle Aktion
-        self.current_action = action
-
-        # Bewegung der Servos
-        if action == 0:  # Links
-            self.servo_position[0] = max(0, self.servo_position[0] - self.step_size)
-        elif action == 1:  # Rechts
-            self.servo_position[0] = min(180, self.servo_position[0] + self.step_size)
-        elif action == 2:  # Hoch
-            self.servo_position[1] = max(0, self.servo_position[1] - self.step_size)
-        elif action == 3:  # Runter
-            self.servo_position[1] = min(180, self.servo_position[1] + self.step_size)
-
-        # Berechne LDR-Werte
-        ldr_values = self._calculate_ldr_values()
-
-        # Neue Belohnungsberechnung
-        #reward, ldr_reward, balance_penalty, position_penalty = calculate_reward(ldr_values, self.servo_position, self.light_source)
-        reward, intensity_bonus, spread_penalty = calculate_reward(ldr_values)
-        reward = max(reward, 0)  # Reward bleibt mindestens bei 0
-
-        # Speichere die aktuelle Aktion als vorherige Aktion
-        self.previous_action = action
-
-        done = reward > 3.5 or self._is_out_of_bounds()
-
-        self._move_light_source()
-
-        return ldr_values, reward, done, False, {}
-    
+     
     def step(self, action):
         # Speichere die aktuelle Aktion
         self.current_action = action
@@ -128,25 +97,24 @@ class LightTrackingEnv(gym.Env):
         return ldr_values, reward, done, False, {}
 
     def _calculate_ldr_values(self):
+        # Berechnung der Distanzen
         distances = np.linalg.norm(self.light_source - self.ldr_positions, axis=1)
-        light_radius = 10
-        sensor_radius = 5
 
         # Lichtintensitätsberechnung
         light_intensity = np.where(
-            distances <= light_radius,
+            distances <= self.light_radius,
             1,
-            1 / (1 + (distances - light_radius) ** 2)
+            1 / (1 + (distances - self.light_radius) ** 2)
         )
 
         # Sensorverstärkung
         sensor_effect = np.where(
-            distances <= sensor_radius,
+            distances <= self.sensor_radius,
             1.2,
             1
         )
 
-        # Finaler Messwert = Lichtintensität * Sensorverstärkung
+        # Finaler Messwert
         final_values = light_intensity * sensor_effect
         return final_values / final_values.max() if final_values.max() > 0 else final_values
 

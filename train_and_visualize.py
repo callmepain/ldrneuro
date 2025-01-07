@@ -16,6 +16,8 @@ from callbacks import DebugCallback
 from stable_baselines3.common.utils import set_random_seed
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+import threading
+from matplotlib.patches import Circle
 
 print(torch.cuda.is_available())  # Sollte True sein
 
@@ -31,52 +33,6 @@ def make_env(env_id, rank, seed=0):
         env.seed(seed + rank)  # Seed für jede Instanz
         return env
     return _init
-
-def visualize_training(env, model):
-    """ Echtzeit-Visualisierung der Servo- und Lichtquellenbewegungen """
-    obs, _ = env.reset()
-
-    def update(frame, servo_scatter, light_scatter):
-        nonlocal obs
-
-        # Modellvorhersage
-        action, _states = model.predict(obs, deterministic=True)
-
-        # Umgebungsschritt ausführen
-        obs, reward, done, _, _ = env.step(action)
-        if done:
-            obs, _ = env.reset()
-
-        # Aktualisiere die Positionen
-        servo_position = env.servo_position
-        light_source = env.light_source
-
-        # Aktualisiere die Scatter-Daten
-        servo_scatter.set_offsets([servo_position])
-        light_scatter.set_offsets([light_source * 180])  # Lichtquelle auf Skala 0-180 transformieren
-
-        # Titel mit Informationen
-        plt.title(f"Reward: {reward:.2f} | Servo: {servo_position} | Light: {light_source}")
-        return servo_scatter, light_scatter
-
-    # Erstelle das Plot-Layout
-    fig, ax = plt.subplots()
-    ax.set_xlim(0, 180)
-    ax.set_ylim(0, 180)
-    ax.set_xlabel("X-Position")
-    ax.set_ylabel("Y-Position")
-    ax.grid()
-
-    # Scatter-Objekte für Servo und Lichtquelle
-    servo_scatter = ax.scatter([], [], c="blue", label="Servo Position")
-    light_scatter = ax.scatter([], [], c="orange", label="Light Source")
-    ax.legend()
-
-    # Animation
-    ani = animation.FuncAnimation(fig, update, frames=200, fargs=(servo_scatter, light_scatter), interval=100, blit=False)
-
-    # Zeige die Animation
-    plt.show()
 
 # Updated train_model function to ensure unique logging for each retraining session
 def train_model(seed=42):
@@ -126,7 +82,7 @@ def train_model(seed=42):
 
         print(f"Erstelle neues Modell: {model_path}...")
         env = DummyVecEnv([lambda: LightTrackingEnv() for _ in range(16)])  # 24 parallele Threads
-        
+
         model = PPO(
             "MlpPolicy",
             env,
@@ -224,9 +180,13 @@ def train_model(seed=42):
     model.set_logger(logger)
 
     # Training starten
-    debug_callback = DebugCallback()
+    debug_callback = DebugCallback(update_interval=200)
     start_time = time.time()
-    model.learn(total_timesteps=2_000_000, tb_log_name=f"training_{model_suffix}_{int(time.time())}", callback=debug_callback)
+    model.learn(
+        total_timesteps=2_000_000, 
+        tb_log_name=f"training_{model_suffix}_{int(time.time())}", 
+        callback=debug_callback
+    )
     model.save(model_path)
     print(f"Modell gespeichert als '{model_path}'.")
     print(f"TensorBoard Logs wurden in '{log_dir}' gespeichert.")
