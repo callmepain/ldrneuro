@@ -8,7 +8,7 @@ from matplotlib.patches import Circle
 import threading
 
 class DebugCallback(BaseCallback):
-    def __init__(self, update_interval=10, enable_visualization=False):
+    def __init__(self, update_interval=10, enable_visualization=True):
         super().__init__()
         self.episode_rewards = []
         self.episode_lengths = []
@@ -26,11 +26,12 @@ class DebugCallback(BaseCallback):
         env = self.training_env.envs[0].unwrapped
         # Radien aus der Umgebung verwenden
         light_radius = env.light_radius
-        ldr_radius = env.sensor_radius
+        ldr_radii = env.sensor_radius
 
         # Aktualisiere die Positionen dynamisch aus der Umgebung
         self.light_source_position = [env.light_source[0] * 180, env.light_source[1] * 180]
         self.servo_position = [env.servo_position[0], env.servo_position[1]]
+        ldr_positions = env.ldr_positions
 
         # Aktualisiere die Visualisierung nur alle N Schritte
         if self.enable_visualization and self.n_calls % self.update_interval == 0:
@@ -46,10 +47,18 @@ class DebugCallback(BaseCallback):
             # Servo-Position und LDR-Aufnahme-Radius visualisieren
             self.ax.add_patch(
                 plt.Circle((self.servo_position[0], self.servo_position[1]),
-                        ldr_radius, color='red', alpha=0.5, label='LDR Radius')
+                        float(np.mean(ldr_radii)), color='red', alpha=0.5, label='LDR Radius (Average)')
             )
             self.ax.plot(self.servo_position[0], self.servo_position[1], 'ro', label='Servo Position')
 
+            # LDR-Positionen visualisieren
+            for i, (x, y) in enumerate(ldr_positions):
+                # Kreis für den spezifischen LDR-Bereich zeichnen
+                self.ax.add_patch(
+                    plt.Circle((x, y), float(ldr_radii[i]), color='blue', alpha=0.2, label=f'LDR {i+1} Radius' if i == 0 else "")
+                )
+                self.ax.plot(x, y, 'bo', label=f'LDR {i+1}' if i == 0 else "")  # LDR-Positionen als blaue Punkte
+                self.ax.text(x + 2, y + 2, f"LDR {i+1}", color='blue')  # Nummerierung der LDRs
             # Achsen und Legende konfigurieren
             self.ax.set_xlim(0, max(180, light_radius + 20))
             self.ax.set_ylim(0, max(180, light_radius + 20))
@@ -65,7 +74,7 @@ class DebugCallback(BaseCallback):
         ldr_values = env._calculate_ldr_values()
 
         # Belohnungslogik
-        reward, ldr_reward, balance_penalty, position_penalty = calculate_reward(
+        reward, ldr_reward, balance_penalty, position_penalty, raw_reward = calculate_reward(
             ldr_values, env.servo_position, env.light_source
         )
         #reward, intensity_bonus, spread_penalty = calculate_reward(ldr_values)
@@ -79,6 +88,7 @@ class DebugCallback(BaseCallback):
         self.logger.record("custom/position_penalty", position_penalty)
         self.logger.record("custom/light_source_x", env.light_source[0])
         self.logger.record("custom/light_source_y", env.light_source[1])
+        self.logger.record("custom/raw_reward", raw_reward)
 
         # Logge Modellgewichte (Mittelwert und maximale Änderung)
         if self.n_calls % 100 == 0:  # Alle 100 Schritte

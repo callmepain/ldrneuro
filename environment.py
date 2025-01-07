@@ -12,7 +12,12 @@ class LightTrackingEnv(gym.Env):
 
         # Standard-Radien
         self.light_radius = self.light_intensity * 5.0  # Beispiel: Lichtintensität beeinflusst den Radius
-        self.sensor_radius = self.sensor_sensitivity * 4.0  # Beispiel: Empfindlichkeit beeinflusst den Radius
+        self.sensor_radius = [
+            self.sensor_sensitivity * 4.0,  # Radius für LDR 1
+            self.sensor_sensitivity * 4.0,  # Radius für LDR 2
+            self.sensor_sensitivity * 4.0,  # Radius für LDR 3
+            self.sensor_sensitivity * 4.0   # Radius für LDR 4
+        ]
 
         self.action_space = spaces.Discrete(5)  # 5 Aktionen: Links, Rechts, Hoch, Runter, Stopp
         self.observation_space = spaces.Box(low=0, high=1, shape=(4,), dtype=np.float32)  # LDR-Werte
@@ -73,11 +78,18 @@ class LightTrackingEnv(gym.Env):
         elif action == 3:  # Runter
             self.servo_position[1] = min(180, self.servo_position[1] + adaptive_step)
 
+        self.ldr_positions = np.array([
+            [self.servo_position[0], self.servo_position[1] + self.sensor_radius[0]],  # Oben
+            [self.servo_position[0] - self.sensor_radius[1], self.servo_position[1]],  # Links
+            [self.servo_position[0], self.servo_position[1] - self.sensor_radius[2]],  # Unten
+            [self.servo_position[0] + self.sensor_radius[3], self.servo_position[1]]   # Rechts
+        ])
+
         # Berechne LDR-Werte
         ldr_values = self._calculate_ldr_values()
 
         # Neue Belohnungsberechnung
-        reward, ldr_reward, balance_penalty, position_penalty = calculate_reward(ldr_values, self.servo_position, self.light_source)
+        reward, ldr_reward, balance_penalty, position_penalty, raw_reward = calculate_reward(ldr_values, self.servo_position, self.light_source)
         #reward, intensity_bonus, spread_penalty = calculate_reward(ldr_values)
         reward = max(reward, 0)  # Reward bleibt mindestens bei 0
 
@@ -101,26 +113,24 @@ class LightTrackingEnv(gym.Env):
         distances = np.linalg.norm(self.light_source - self.ldr_positions, axis=1)
 
         # Lichtintensitätsberechnung
-        light_intensity = np.where(
-            distances <= self.light_radius,
-            1,
-            1 / (1 + (distances - self.light_radius) ** 2)
-        )
+        light_intensity = np.array([
+            1 if distance <= self.light_radius else 1 / (1 + (distance - self.light_radius) ** 2)
+            for distance in distances
+        ])
 
-        # Sensorverstärkung
-        sensor_effect = np.where(
-            distances <= self.sensor_radius,
-            1.2,
-            1
-        )
+        sensor_effect = np.array([
+            1.2 if distance <= ldr_radius else 1
+            for distance, ldr_radius in zip(distances, self.sensor_radius)
+        ])
 
         # Finaler Messwert
         final_values = light_intensity * sensor_effect
         return final_values / final_values.max() if final_values.max() > 0 else final_values
 
-    def _move_light_source(self, move_range=0.01, stationary=True):
+    def _move_light_source(self, move_range=0.005, stationary=False):
         if not stationary:
-            self.light_source += np.random.uniform(-move_range, move_range, size=2)
+            direction = np.random.choice([-1, 1], size=2)
+            self.light_source += direction * np.random.uniform(0, move_range, size=2)
             self.light_source = np.clip(self.light_source, 0, 1)
 
     def save_logs(self, filename="logs.npz"):
@@ -141,10 +151,9 @@ class LightTrackingEnv(gym.Env):
         distances = np.linalg.norm(self.light_source - self.ldr_positions, axis=1)  # Distanz zu LDRs
 
         # Innerhalb des Sensor-Radius messen wir intensiver (Bonus)
-        sensor_effect = np.where(
-            distances <= sensor_radius,
-            1.2,  # Verstärkte Messung innerhalb des Radius
-            1  # Normale Messung außerhalb des Radius
-        )
+        sensor_effect = np.array([
+            1.2 if distance <= ldr_radius else 1
+            for distance, ldr_radius in zip(distances, self.sensor_radius)
+        ])
 
         return sensor_effect

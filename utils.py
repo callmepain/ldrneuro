@@ -6,6 +6,56 @@ def calculate_reward(
     ldr_values, servo_position, light_source, previous_reward=0, previous_action=None, current_action=None
 ):
     # LDR-Belohnung
+    spread_penalty = 1.0 * np.std(ldr_values)
+    intensity_bonus = (np.mean(ldr_values) ** 4) if np.mean(ldr_values) > 0 else 0
+    ldr_reward = sum([2.0 * v for v in ldr_values]) + intensity_bonus - spread_penalty
+
+    # Belohnung auf 0 setzen, wenn kein Licht erkannt wird
+    if np.mean(ldr_values) <= 0.4:  # Erhöhe den Schwellenwert
+        ldr_reward = 0
+
+    # Positionsstrafe
+    relative_distance = np.linalg.norm(np.array(servo_position) - light_source * 180) / 180
+
+    position_penalty = 0.5 * (relative_distance ** 2) * (1 + relative_distance)
+    # Härtere Bestrafung für größere Distanzen
+    if relative_distance > 0.6:
+        position_penalty = 1.5 * (relative_distance ** 4) * (1 + relative_distance)
+    elif relative_distance > 0.3:
+        position_penalty = 1.0 * (relative_distance ** 3) * (1 + relative_distance)
+    else:
+        position_penalty = 0.7 * (relative_distance ** 2) * (1 + relative_distance)
+
+    # Zusätzliche Strafe bei schwachem Licht
+    if np.mean(ldr_values) < 0.4:  # Schwellenwert für schwaches Licht
+        position_penalty *= 5  # Drastischere Strafe
+
+    # LDR-Reward abhängig von Position
+    ldr_reward *= max(0, 1 - relative_distance / 1.3)  # Strengere Skalierung
+    
+    # Balancing-Strafe
+    balance_penalty = min(1.0, 1.0 * np.std(ldr_values))
+    if np.mean(ldr_values) < 0.4:  # Schwellenwert für schwaches Licht
+        balance_penalty += 1.5
+    balance_penalty *= (1 + relative_distance)  # Abhängig von der Distanz
+
+    # Gesamtreward
+    reward = ldr_reward - position_penalty - balance_penalty
+
+    raw_reward = ldr_reward - position_penalty - balance_penalty
+    # Glätten und Begrenzen des Rewards
+    reward = 0.6 * previous_reward + 0.4 * reward
+    if np.mean(ldr_values) > 0.95 and relative_distance < 0.1:
+        reward = 4.0
+    reward = np.clip(reward, -5, 5)
+
+    return reward, ldr_reward, balance_penalty, position_penalty, raw_reward
+
+
+def calculate_reward_alt(
+    ldr_values, servo_position, light_source, previous_reward=0, previous_action=None, current_action=None
+):
+    # LDR-Belohnung
     spread_penalty = 1.5 * np.std(ldr_values)
     intensity_bonus = (np.mean(ldr_values) ** 2) if np.mean(ldr_values) > 0 else 0  # Bonus nur bei erfasstem Licht
     ldr_reward = sum([1.0 * v for v in ldr_values]) + intensity_bonus - spread_penalty
@@ -39,8 +89,10 @@ def calculate_reward(
     # Gesamtreward
     reward = ldr_reward - position_penalty - balance_penalty
 
+    raw_reward = ldr_reward - position_penalty - balance_penalty
+
     # Glätten und Begrenzen des Rewards
     reward = 0.6 * previous_reward + 0.4 * reward
     reward = np.clip(reward, -5, 5)
 
-    return reward, ldr_reward, balance_penalty, position_penalty
+    return reward, ldr_reward, balance_penalty, position_penalty, raw_reward
