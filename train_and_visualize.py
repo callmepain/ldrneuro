@@ -126,6 +126,7 @@ def train_model(seed=42):
 
         print(f"Erstelle neues Modell: {model_path}...")
         env = DummyVecEnv([lambda: LightTrackingEnv() for _ in range(16)])  # 24 parallele Threads
+        
         model = PPO(
             "MlpPolicy",
             env,
