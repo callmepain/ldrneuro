@@ -81,20 +81,24 @@ def train_model(seed=42):
         os.makedirs(log_dir, exist_ok=True)
 
         print(f"Erstelle neues Modell: {model_path}...")
-        env = DummyVecEnv([lambda: LightTrackingEnv() for _ in range(16)])  # 24 parallele Threads
+        env = DummyVecEnv([lambda: LightTrackingEnv() for _ in range(128)])  # 24 parallele Threads
 
         model = PPO(
             "MlpPolicy",
             env,
             policy_kwargs=policy_kwargs,
-            learning_rate=0.0001,
+            learning_rate=2.5e-4,
             n_steps=8192,
-            batch_size=2048,
+            batch_size=4096,
             n_epochs=10,
             gamma=0.99,
-            gae_lambda=0.9,
-            clip_range=0.1,
+            gae_lambda=0.95,
+            clip_range=0.2,
             verbose=2,
+            vf_coef=0.5,
+            ent_coef=0.01,
+            max_grad_norm=0.5,
+            target_kl=0.03,
             device="cuda" if torch.cuda.is_available() else "cpu",  # GPU bevorzugen
             tensorboard_log=log_dir
         )
@@ -135,7 +139,7 @@ def train_model(seed=42):
 
         print(f"Bestehendes Modell gefunden: {model_path}. Lade Modell...")
         model = PPO.load(model_path, device="cuda" if torch.cuda.is_available() else "cpu")  # GPU bevorzugen
-        env = DummyVecEnv([lambda: LightTrackingEnv() for _ in range(16)])  # 64 Threads
+        env = DummyVecEnv([lambda: LightTrackingEnv() for _ in range(128)])  # 64 Threads
         model.set_env(env)
 
         # Abfrage, ob Batchgröße geändert werden soll
@@ -180,10 +184,10 @@ def train_model(seed=42):
     model.set_logger(logger)
 
     # Training starten
-    debug_callback = DebugCallback(update_interval=200)
+    debug_callback = DebugCallback(update_interval=200, enable_visualization=False)
     start_time = time.time()
     model.learn(
-        total_timesteps=2_000_000, 
+        total_timesteps=8_000_000, 
         tb_log_name=f"training_{model_suffix}_{int(time.time())}", 
         callback=debug_callback
     )

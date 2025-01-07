@@ -5,7 +5,8 @@ import torch
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from matplotlib.patches import Circle
-import threading
+from psutil import cpu_percent
+from pynvml import nvmlInit, nvmlDeviceGetHandleByIndex, nvmlDeviceGetUtilizationRates, nvmlShutdown
 
 class DebugCallback(BaseCallback):
     def __init__(self, update_interval=10, enable_visualization=True):
@@ -15,6 +16,14 @@ class DebugCallback(BaseCallback):
 
         self.update_interval = update_interval
         self.enable_visualization = enable_visualization  # Visualisierung aktivieren/deaktivieren
+
+        #GPU-Monitoring initialisieren
+        self.device_handle = None  # Standardwert setzen
+        try:
+            nvmlInit()  # Initialisiere NVML
+            self.device_handle = nvmlDeviceGetHandleByIndex(0)  # GPU 0 auswählen
+        except Exception as e:
+            print(f"GPU-Monitoring-Error during init: {e}")
 
         if self.enable_visualization:
             self.fig, self.ax = plt.subplots()  # Initialisiere Matplotlib-Figur und Achsen
@@ -78,6 +87,11 @@ class DebugCallback(BaseCallback):
             ldr_values, env.servo_position, env.light_source
         )
         #reward, intensity_bonus, spread_penalty = calculate_reward(ldr_values)
+        ldr_values = env._calculate_ldr_values()
+
+        # LDR-Werte loggen
+        for i, ldr_value in enumerate(ldr_values):
+            self.logger.record(f"ldr/ldr_{i+1}", ldr_value, exclude="stdout")
 
         # Logge zusätzliche Metriken in TensorBoard
         self.logger.record("custom/servo_position_x", env.servo_position[0])
@@ -89,6 +103,18 @@ class DebugCallback(BaseCallback):
         self.logger.record("custom/light_source_x", env.light_source[0])
         self.logger.record("custom/light_source_y", env.light_source[1])
         self.logger.record("custom/raw_reward", raw_reward)
+        self.logger.record("performance/cpu_usage", cpu_percent())
+        # GPU-Auslastung loggen
+        if self.device_handle is not None:
+            try:
+                utilization = nvmlDeviceGetUtilizationRates(self.device_handle)
+                self.logger.record("performance/gpu_usage", utilization.gpu)
+                self.logger.record("performance/gpu_memory_usage", utilization.memory)
+            except Exception as e:
+                print(f"GPU-Monitoring-Error: {e}")
+
+        distance_to_light = np.linalg.norm(np.array(env.servo_position) - np.array(env.light_source) * 180)
+        self.logger.record("custom/distance_to_light", distance_to_light)
 
         # Logge Modellgewichte (Mittelwert und maximale Änderung)
         if self.n_calls % 100 == 0:  # Alle 100 Schritte
