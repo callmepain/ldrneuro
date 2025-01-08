@@ -119,9 +119,6 @@ class DebugCallback(BaseCallback):
         # Logge Modellgewichte (Mittelwert und maximale Änderung)
         if self.n_calls % 100 == 0:  # Alle 100 Schritte
             print(f"Step {self.n_calls}:")
-            print(f"  Servo Position: {env.servo_position}")
-            print(f"  Reward: {reward}")
-            print(f"  Modellgewicht (erste Layer): {list(self.model.policy.parameters())[0].mean().item():.6f}")
             with torch.no_grad():
                 for name, param in self.model.policy.named_parameters():
                     self.logger.record(f"weights/layer0_mean", param.mean().item())
