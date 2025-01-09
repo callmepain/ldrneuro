@@ -37,7 +37,7 @@ def make_env(env_id, rank, seed=0):
     return _init
 
 # Updated train_model function to ensure unique logging for each retraining session
-def train_model(seed=42):
+def train_model(seed=69):
     set_random_seed(seed)
     print("Möchtest du ein neues Modell erstellen oder ein vorhandenes laden?")
     print("1: Neues Modell erstellen")
@@ -82,6 +82,15 @@ def train_model(seed=42):
         log_dir = f"./light_tracking_tensorboard/{model_suffix}/session_{int(time.time())}/"
         os.makedirs(log_dir, exist_ok=True)
 
+        # Anzahl der parallelen Umgebungen
+        num_envs = 512  
+        # Dynamisch n_steps und batch_size berechnen
+        n_steps = 2048#4 * num_envs  # Anzahl der Schritte pro Umgebung
+        batch_size = 131072*3#65536#32768#64 * num_envs  # Batchgröße basierend auf der Anzahl der Umgebungen
+        # Validierung, dass batch_size ein Vielfaches von num_envs ist
+        if batch_size % num_envs != 0:
+            raise ValueError("Batchgröße muss ein Vielfaches von num_envs sein.")
+
         print(f"Erstelle neues Modell: {model_path}...")
         env = DummyVecEnv([lambda: LightTrackingEnv() for _ in range(num_envs)])
 
@@ -90,8 +99,8 @@ def train_model(seed=42):
             env,
             policy_kwargs=policy_kwargs,
             learning_rate=2.5e-4,
-            n_steps=16384,
-            batch_size=32768,
+            n_steps=n_steps,
+            batch_size=batch_size,
             n_epochs=10,
             gamma=0.99,
             gae_lambda=0.95,
@@ -133,9 +142,8 @@ def train_model(seed=42):
         # Anzahl der parallelen Umgebungen
         num_envs = 512  
         # Dynamisch n_steps und batch_size berechnen
-        # Beispiel: n_steps = 8 * num_envs, batch_size = 4 * num_envs
-        n_steps = 8 * num_envs  # Anzahl der Schritte pro Umgebung
-        batch_size = 32 * num_envs  # Batchgröße basierend auf der Anzahl der Umgebungen
+        n_steps = 2048#4 * num_envs  # Anzahl der Schritte pro Umgebung
+        batch_size = 131072*3#65536#32768#64 * num_envs  # Batchgröße basierend auf der Anzahl der Umgebungen
         # Validierung, dass batch_size ein Vielfaches von num_envs ist
         if batch_size % num_envs != 0:
             raise ValueError("Batchgröße muss ein Vielfaches von num_envs sein.")
@@ -151,40 +159,48 @@ def train_model(seed=42):
 
         print(f"Bestehendes Modell gefunden: {model_path}. Lade Modell...")
         model = PPO.load(model_path, env=env, device="cuda" if torch.cuda.is_available() else "cpu")  # GPU bevorzugen
-
         # Neues Modell mit geänderten n_steps und batch_size erstellen
-        model = PPO(
+        new_model = PPO(
             "MlpPolicy",
             env,
             policy_kwargs=model.policy_kwargs,  # Übernimmt die ursprüngliche Architektur
-            learning_rate=model.learning_rate,  # Beibehaltung der ursprünglichen Lernrate
+            learning_rate=1e-4,  # Beibehaltung der ursprünglichen Lernrate
             n_steps=n_steps,  # Neue Step-Werte setzen
             batch_size=batch_size,  # Neue Batch-Größe setzen
             gamma=model.gamma,
-            gae_lambda=model.gae_lambda,
+            gae_lambda=0.95,
             clip_range=model.clip_range,
             verbose=model.verbose,
             vf_coef=model.vf_coef,
-            ent_coef=model.ent_coef,
+            ent_coef=0.02,
             max_grad_norm=model.max_grad_norm,
-            target_kl=model.target_kl,
+            target_kl=0.05,
             device="cuda" if torch.cuda.is_available() else "cpu",  # GPU bevorzugen
             tensorboard_log=log_dir
         )
 
         # Policy und Optimizer-Parameter aus dem bestehenden Modell übertragen
-        model.policy.load_state_dict(model.policy.state_dict())
-        model.policy.optimizer.load_state_dict(model.policy.optimizer.state_dict())
+        new_model.policy.load_state_dict(model.policy.state_dict())
+        new_model.policy.optimizer.load_state_dict(model.policy.optimizer.state_dict())
+
+        # Neues Modell ersetzen
+        model = new_model
 
     # Logger konfigurieren
     logger = configure(log_dir, ["stdout", "tensorboard"])
     model.set_logger(logger)
 
     # Training starten
-    debug_callback = DebugCallback(update_interval=200, enable_visualization=False)
+    debug_callback = DebugCallback(update_interval=100, enable_visualization=True)
     start_time = time.time()
+    num_iterations = 2  # Anzahl gewünschter Iterationen 1 iteration = 2minuten
+    # Schritte pro Iteration berechnen
+    steps_per_iteration = n_steps * num_envs
+
+    # Total Timesteps berechnen
+    total_timesteps = steps_per_iteration * num_iterations
     model.learn(
-        total_timesteps=2_000_000, 
+        total_timesteps=total_timesteps, 
         tb_log_name=f"training_{model_suffix}_{int(time.time())}", 
         callback=debug_callback
     )

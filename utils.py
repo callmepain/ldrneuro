@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import os
+import torch
 
 def calculate_reward(
     ldr_values, servo_position, light_source, previous_reward=0, previous_action=None, current_action=None

@@ -3,12 +3,14 @@ from gymnasium import spaces
 import numpy as np
 import random
 from utils import calculate_reward
+import torch
 
 class LightTrackingEnv(gym.Env):
     def __init__(self):
         super(LightTrackingEnv, self).__init__()
         self.light_intensity = 10.0  # Beispielwert
         self.sensor_sensitivity = 5.0  # Empfindlichkeit des LDR
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Standard-Radien
         self.light_radius = self.light_intensity * 5.0  # Beispiel: Lichtintensität beeinflusst den Radius
@@ -107,7 +109,7 @@ class LightTrackingEnv(gym.Env):
         self._move_light_source()
 
         return ldr_values, reward, done, False, {}
-
+    
     def _calculate_ldr_values(self):
         # Berechnung der Distanzen
         distances = np.linalg.norm(self.light_source - self.ldr_positions, axis=1)
